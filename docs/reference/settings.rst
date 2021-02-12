@@ -42,7 +42,7 @@ Search
 
   WAGTAILSEARCH_BACKENDS = {
       'default': {
-          'BACKEND': 'wagtail.search.backends.elasticsearch2',
+          'BACKEND': 'wagtail.search.backends.elasticsearch5',
           'INDEX': 'myapp'
       }
   }
@@ -207,7 +207,15 @@ Images
 
   WAGTAILIMAGES_IMAGE_MODEL = 'myapp.MyImage'
 
-This setting lets you provide your own image model for use in Wagtail, which might extend the built-in ``AbstractImage`` class or replace it entirely.
+This setting lets you provide your own image model for use in Wagtail, which should extend the built-in ``AbstractImage`` class.
+
+
+.. code-block:: python
+
+  WAGTAILIMAGES_IMAGE_FORM_BASE = 'myapp.forms.MyImageBaseForm'
+
+This setting lets you provide your own image base form for use in Wagtail, which might extend the built-in ``BaseImageForm`` class or replace it entirely.
+You can use it to specify or override the widgets to use in the admin form.
 
 
 .. code-block:: python
@@ -248,6 +256,21 @@ Specifies the number of images shown per page in the image chooser modal.
 
 Documents
 =========
+
+.. code-block:: python
+
+  WAGTAILDOCS_DOCUMENT_MODEL = 'myapp.MyDocument'
+
+This setting lets you provide your own document model for use in Wagtail, which should extend the built-in ``AbstractDocument`` class.
+
+
+.. code-block:: python
+
+  WAGTAILDOCS_DOCUMENT_FORM_BASE = 'myapp.forms.MyDocumentBaseForm'
+
+This setting lets you provide your own Document base form for use in Wagtail, which might extend the built-in ``BaseDocumentForm`` class or replace it entirely.
+You can use it to specify or override the widgets to use in the admin form.
+
 
 .. _wagtaildocs_serve_method:
 

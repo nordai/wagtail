@@ -423,12 +423,13 @@ Hooks for customising the editing interface for pages and snippets.
         js_includes = format_html_join('\n', '<script src="{0}"></script>',
             ((static(filename),) for filename in js_files)
         )
+        # remember to use double '{{' so they are not parsed as template placeholders
         return js_includes + format_html(
             """
             <script>
-                $(function() {
+                $(function() {{
                     $('button').raptorize();
-                });
+                }});
             </script>
             """
         )
@@ -482,7 +483,7 @@ Hooks for customising the way users are directed through the process of creating
   .. code-block:: python
 
       @hooks.register('after_create_page')
-      def set_attribute_after_page_create(request, page)
+      def set_attribute_after_page_create(request, page):
          page.title = 'Persistent Title'
          new_revision = page.save_revision()
          if page.live:

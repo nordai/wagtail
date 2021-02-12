@@ -13,7 +13,7 @@ from django.urls import reverse
 from wagtail.core import blocks
 from wagtail.embeds import oembed_providers
 from wagtail.embeds.blocks import EmbedBlock, EmbedValue
-from wagtail.embeds.embeds import get_embed
+from wagtail.embeds.embeds import get_embed, get_embed_hash
 from wagtail.embeds.exceptions import EmbedNotFoundException, EmbedUnsupportedProviderException
 from wagtail.embeds.finders import get_finders
 from wagtail.embeds.finders.embedly import AccessDeniedEmbedlyException, EmbedlyException
@@ -208,6 +208,14 @@ class TestEmbeds(TestCase):
             get_embed('www.test.com/1234', max_width=400)
 
 
+class TestEmbedHash(TestCase):
+    def test_get_embed_hash(self):
+        url = "www.test.com/1234"
+        self.assertEqual(get_embed_hash(url), "9a4cfc187266026cd68160b5db572629")
+        self.assertEqual(get_embed_hash(url, 0), "946fb9597a6c74ab3cef1699eff7fde7")
+        self.assertEqual(get_embed_hash(url, 1), "427830227a86093b50417e11dbd2f28e")
+
+
 class TestChooser(TestCase, WagtailTestUtils):
     def setUp(self):
         # login
@@ -366,6 +374,14 @@ class TestOembed(TestCase):
         with patch.object(urllib.request, 'urlopen', **config):
             self.assertRaises(EmbedNotFoundException, OEmbedFinder().find_embed,
                               "http://www.youtube.com/watch/")
+
+    @patch('urllib.request.urlopen')
+    def test_oembed_non_json_response(self, urlopen):
+        urlopen.return_value = self.dummy_response
+        self.assertRaises(
+            EmbedNotFoundException, OEmbedFinder().find_embed,
+            "https://www.youtube.com/watch?v=ReblZ7o7lu4"
+        )
 
     @patch('urllib.request.urlopen')
     @patch('json.loads')

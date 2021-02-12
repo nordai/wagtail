@@ -111,7 +111,7 @@ Database fields
 
     .. attribute:: locked_by
 
-       (foreign key to user model)
+        (foreign key to user model)
 
         The user who has currently locked the page. Only this user can edit the page.
 
@@ -158,7 +158,11 @@ In addition to the model fields provided, ``Page`` has many properties and metho
 .. class:: Page
     :noindex:
 
+    .. automethod:: get_specific
+
     .. autoattribute:: specific
+
+    .. autoattribute:: specific_deferred
 
     .. autoattribute:: specific_class
 

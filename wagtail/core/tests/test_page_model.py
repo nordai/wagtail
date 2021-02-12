@@ -944,6 +944,96 @@ class TestLiveRevision(TestCase):
             )
 
 
+class TestPageGetSpecific(TestCase):
+    fixtures = ['test.json']
+
+    def setUp(self):
+        super().setUp()
+        self.page = Page.objects.get(url_path="/home/about-us/")
+        self.page.foo = 'ABC'
+        self.page.bar = {'key': 'value'}
+        self.page.baz = 999
+
+    def test_default(self):
+        # Field values are fetched from the database, hence the query
+        with self.assertNumQueries(1):
+            result = self.page.get_specific(copy_attrs=['foo', 'bar'])
+
+        # The returned instance is the correct type
+        self.assertIsInstance(result, SimplePage)
+
+        # Generic page field values can be accessed for free
+        with self.assertNumQueries(0):
+            self.assertEqual(result.id, self.page.id)
+            self.assertEqual(result.title, self.page.title)
+
+        # Specific model fields values are available without additional queries
+        with self.assertNumQueries(0):
+            self.assertTrue(result.content)
+
+        # 'foo' and 'bar' attributes should have been copied over...
+        self.assertIs(result.foo, self.page.foo)
+        self.assertIs(result.bar, self.page.bar)
+
+        # ...but not 'baz'
+        self.assertFalse(hasattr(result, 'baz'))
+
+    def test_deferred(self):
+        # Field values are NOT fetched from the database, hence no query
+        with self.assertNumQueries(0):
+            result = self.page.get_specific(deferred=True, copy_attrs=['foo', 'bar'])
+
+        # The returned instance is the correct type
+        self.assertIsInstance(result, SimplePage)
+
+        # Generic page field values can be accessed for free
+        with self.assertNumQueries(0):
+            self.assertEqual(result.id, self.page.id)
+            self.assertEqual(result.title, self.page.title)
+
+        # But, specific model fields values are NOT available without additional queries
+        with self.assertNumQueries(1):
+            self.assertTrue(result.content)
+
+        # 'foo' and 'bar' attributes should have been copied over...
+        self.assertIs(result.foo, self.page.foo)
+        self.assertIs(result.bar, self.page.bar)
+
+        # ...but not 'baz'
+        self.assertFalse(hasattr(result, 'baz'))
+
+    def test_specific_cached_property(self):
+        # invoking several times to demonstrate that field values
+        # are fetched only once from the database, and each time the
+        # same object is returned
+        with self.assertNumQueries(1):
+            result = self.page.specific
+            result_2 = self.page.specific
+            result_3 = self.page.specific
+            self.assertIs(result, result_2)
+            self.assertIs(result, result_3)
+
+        self.assertIsInstance(result, SimplePage)
+        # Specific model fields values are available without additional queries
+        with self.assertNumQueries(0):
+            self.assertTrue(result.content)
+
+    def test_specific_deferred_cached_property(self):
+        # invoking several times to demonstrate that the property
+        # returns the same object (without any queries)
+        with self.assertNumQueries(0):
+            result = self.page.specific_deferred
+            result_2 = self.page.specific_deferred
+            result_3 = self.page.specific_deferred
+            self.assertIs(result, result_2)
+            self.assertIs(result, result_3)
+
+        self.assertIsInstance(result, SimplePage)
+        # Specific model fields values are not available without additional queries
+        with self.assertNumQueries(1):
+            self.assertTrue(result.content)
+
+
 class TestCopyPage(TestCase):
     fixtures = ['test.json']
 
@@ -1967,6 +2057,45 @@ class TestUpdateAliases(TestCase):
         # Draft titles shouldn't update as alias pages do not have drafts
         self.assertEqual(alias.draft_title, "Updated title")
         self.assertEqual(alias_alias.draft_title, "Updated title")
+
+        # Check log entries were created
+        self.assertTrue(PageLogEntry.objects.filter(page=alias, action='wagtail.publish').exists())
+        self.assertTrue(PageLogEntry.objects.filter(page=alias_alias, action='wagtail.publish').exists())
+
+    def test_update_aliases_publishes_drafts(self):
+        event_page = EventPage.objects.get(url_path='/home/events/christmas/')
+
+        # Unpublish the event page so that the aliases will be created in draft
+        event_page.live = False
+        event_page.has_unpublished_changes = True
+        event_page.save(clean=False)
+
+        alias = event_page.create_alias(update_slug='new-event-page')
+        alias_alias = alias.create_alias(update_slug='new-event-page-2')
+
+        self.assertFalse(alias.live)
+        self.assertFalse(alias_alias.live)
+
+        # Publish the event page
+        event_page.live = True
+        event_page.has_unpublished_changes = False
+        event_page.save(clean=False)
+
+        # Nothing should've happened yet
+        alias.refresh_from_db()
+        alias_alias.refresh_from_db()
+        self.assertFalse(alias.live)
+        self.assertFalse(alias_alias.live)
+
+        PageLogEntry.objects.all().delete()
+
+        event_page.update_aliases()
+
+        # Check that the aliases have been updated
+        alias.refresh_from_db()
+        alias_alias.refresh_from_db()
+        self.assertTrue(alias.live)
+        self.assertTrue(alias_alias.live)
 
         # Check log entries were created
         self.assertTrue(PageLogEntry.objects.filter(page=alias, action='wagtail.publish').exists())

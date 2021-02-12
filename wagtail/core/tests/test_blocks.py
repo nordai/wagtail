@@ -3333,6 +3333,160 @@ class TestStreamBlock(WagtailTestUtils, SimpleTestCase):
         }
         self.check_get_prep_value_nested_streamblocks(stream_data, is_lazy=True)
 
+    def test_modifications_to_stream_child_id_are_saved(self):
+        class ArticleBlock(blocks.StreamBlock):
+            heading = blocks.CharBlock()
+            paragraph = blocks.CharBlock()
+
+        block = ArticleBlock()
+        stream = block.to_python([
+            {'type': 'heading', 'value': 'hello', 'id': '0001'},
+            {'type': 'paragraph', 'value': 'world', 'id': '0002'},
+        ])
+        stream[1].id = '0003'
+        raw_data = block.get_prep_value(stream)
+        self.assertEqual(raw_data, [
+            {'type': 'heading', 'value': 'hello', 'id': '0001'},
+            {'type': 'paragraph', 'value': 'world', 'id': '0003'},
+        ])
+
+    def test_modifications_to_stream_child_value_are_saved(self):
+        class ArticleBlock(blocks.StreamBlock):
+            heading = blocks.CharBlock()
+            paragraph = blocks.CharBlock()
+
+        block = ArticleBlock()
+        stream = block.to_python([
+            {'type': 'heading', 'value': 'hello', 'id': '0001'},
+            {'type': 'paragraph', 'value': 'world', 'id': '0002'},
+        ])
+        stream[1].value = 'earth'
+        raw_data = block.get_prep_value(stream)
+        self.assertEqual(raw_data, [
+            {'type': 'heading', 'value': 'hello', 'id': '0001'},
+            {'type': 'paragraph', 'value': 'earth', 'id': '0002'},
+        ])
+
+    def test_set_streamvalue_item(self):
+        class ArticleBlock(blocks.StreamBlock):
+            heading = blocks.CharBlock()
+            paragraph = blocks.CharBlock()
+
+        block = ArticleBlock()
+        stream = block.to_python([
+            {'type': 'heading', 'value': 'hello', 'id': '0001'},
+            {'type': 'paragraph', 'value': 'world', 'id': '0002'},
+        ])
+        stream[1] = ('heading', 'goodbye', '0003')
+        raw_data = block.get_prep_value(stream)
+        self.assertEqual(raw_data, [
+            {'type': 'heading', 'value': 'hello', 'id': '0001'},
+            {'type': 'heading', 'value': 'goodbye', 'id': '0003'},
+        ])
+
+    def test_delete_streamvalue_item(self):
+        class ArticleBlock(blocks.StreamBlock):
+            heading = blocks.CharBlock()
+            paragraph = blocks.CharBlock()
+
+        block = ArticleBlock()
+        stream = block.to_python([
+            {'type': 'heading', 'value': 'hello', 'id': '0001'},
+            {'type': 'paragraph', 'value': 'world', 'id': '0002'},
+        ])
+        del stream[0]
+        raw_data = block.get_prep_value(stream)
+        self.assertEqual(raw_data, [
+            {'type': 'paragraph', 'value': 'world', 'id': '0002'},
+        ])
+
+    def test_insert_streamvalue_item(self):
+        class ArticleBlock(blocks.StreamBlock):
+            heading = blocks.CharBlock()
+            paragraph = blocks.CharBlock()
+
+        block = ArticleBlock()
+        stream = block.to_python([
+            {'type': 'heading', 'value': 'hello', 'id': '0001'},
+            {'type': 'paragraph', 'value': 'world', 'id': '0002'},
+        ])
+        stream.insert(1, ('paragraph', 'mutable', '0003'))
+        raw_data = block.get_prep_value(stream)
+        self.assertEqual(raw_data, [
+            {'type': 'heading', 'value': 'hello', 'id': '0001'},
+            {'type': 'paragraph', 'value': 'mutable', 'id': '0003'},
+            {'type': 'paragraph', 'value': 'world', 'id': '0002'},
+        ])
+
+    def test_append_streamvalue_item(self):
+        class ArticleBlock(blocks.StreamBlock):
+            heading = blocks.CharBlock()
+            paragraph = blocks.CharBlock()
+
+        block = ArticleBlock()
+        stream = block.to_python([
+            {'type': 'heading', 'value': 'hello', 'id': '0001'},
+            {'type': 'paragraph', 'value': 'world', 'id': '0002'},
+        ])
+        stream.append(('paragraph', 'of warcraft', '0003'))
+        raw_data = block.get_prep_value(stream)
+        self.assertEqual(raw_data, [
+            {'type': 'heading', 'value': 'hello', 'id': '0001'},
+            {'type': 'paragraph', 'value': 'world', 'id': '0002'},
+            {'type': 'paragraph', 'value': 'of warcraft', 'id': '0003'},
+        ])
+
+    def test_streamvalue_raw_data(self):
+        class ArticleBlock(blocks.StreamBlock):
+            heading = blocks.CharBlock()
+            paragraph = blocks.CharBlock()
+
+        block = ArticleBlock()
+        stream = block.to_python([
+            {'type': 'heading', 'value': 'hello', 'id': '0001'},
+            {'type': 'paragraph', 'value': 'world', 'id': '0002'},
+        ])
+
+        self.assertEqual(stream.raw_data[0], {'type': 'heading', 'value': 'hello', 'id': '0001'})
+        stream.raw_data[0]['value'] = 'bonjour'
+        self.assertEqual(stream.raw_data[0], {'type': 'heading', 'value': 'bonjour', 'id': '0001'})
+
+        # changes to raw_data will be written back via get_prep_value...
+        raw_data = block.get_prep_value(stream)
+        self.assertEqual(raw_data, [
+            {'type': 'heading', 'value': 'bonjour', 'id': '0001'},
+            {'type': 'paragraph', 'value': 'world', 'id': '0002'},
+        ])
+
+        # ...but once the bound-block representation has been accessed, that takes precedence
+        self.assertEqual(stream[0].value, 'bonjour')
+        stream.raw_data[0]['value'] = 'guten tag'
+        self.assertEqual(stream.raw_data[0]['value'], 'guten tag')
+        self.assertEqual(stream[0].value, 'bonjour')
+        raw_data = block.get_prep_value(stream)
+        self.assertEqual(raw_data, [
+            {'type': 'heading', 'value': 'bonjour', 'id': '0001'},
+            {'type': 'paragraph', 'value': 'world', 'id': '0002'},
+        ])
+
+        # Replacing a raw_data entry outright will propagate to the bound block, though
+        stream.raw_data[0] = {'type': 'heading', 'value': 'konnichiwa', 'id': '0003'}
+        raw_data = block.get_prep_value(stream)
+        self.assertEqual(raw_data, [
+            {'type': 'heading', 'value': 'konnichiwa', 'id': '0003'},
+            {'type': 'paragraph', 'value': 'world', 'id': '0002'},
+        ])
+        self.assertEqual(stream[0].value, 'konnichiwa')
+
+        # deletions / insertions on raw_data will also propagate to the bound block representation
+        del stream.raw_data[1]
+        stream.raw_data.insert(0, {'type': 'paragraph', 'value': 'hello kitty says', 'id': '0004'})
+        raw_data = block.get_prep_value(stream)
+        self.assertEqual(raw_data, [
+            {'type': 'paragraph', 'value': 'hello kitty says', 'id': '0004'},
+            {'type': 'heading', 'value': 'konnichiwa', 'id': '0003'},
+        ])
+
     def test_render_with_classname_via_kwarg(self):
         """form_classname from kwargs to be used as an additional class when rendering stream block"""
 
@@ -3496,7 +3650,7 @@ class TestPageChooserBlock(TestCase):
 
         empty_form_html = block.render_form(None, 'page')
         self.assertInHTML('<input id="page" name="page" placeholder="" type="hidden" />', empty_form_html)
-        self.assertIn('createPageChooser("page", ["wagtailcore.page"], null, false, null);', empty_form_html)
+        self.assertIn('createPageChooser("page", null, {"model_names": ["wagtailcore.page"], "can_choose_root": false, "user_perms": null});', empty_form_html)
 
         christmas_page = Page.objects.get(slug='christmas')
         christmas_form_html = block.render_form(christmas_page, 'page')
@@ -3507,32 +3661,32 @@ class TestPageChooserBlock(TestCase):
     def test_form_render_with_target_model_default(self):
         block = blocks.PageChooserBlock()
         empty_form_html = block.render_form(None, 'page')
-        self.assertIn('createPageChooser("page", ["wagtailcore.page"], null, false, null);', empty_form_html)
+        self.assertIn('createPageChooser("page", null, {"model_names": ["wagtailcore.page"], "can_choose_root": false, "user_perms": null});', empty_form_html)
 
     def test_form_render_with_target_model_string(self):
         block = blocks.PageChooserBlock(help_text="pick a page, any page", page_type='tests.SimplePage')
         empty_form_html = block.render_form(None, 'page')
-        self.assertIn('createPageChooser("page", ["tests.simplepage"], null, false, null);', empty_form_html)
+        self.assertIn('createPageChooser("page", null, {"model_names": ["tests.simplepage"], "can_choose_root": false, "user_perms": null});', empty_form_html)
 
     def test_form_render_with_target_model_literal(self):
         block = blocks.PageChooserBlock(help_text="pick a page, any page", page_type=SimplePage)
         empty_form_html = block.render_form(None, 'page')
-        self.assertIn('createPageChooser("page", ["tests.simplepage"], null, false, null);', empty_form_html)
+        self.assertIn('createPageChooser("page", null, {"model_names": ["tests.simplepage"], "can_choose_root": false, "user_perms": null});', empty_form_html)
 
     def test_form_render_with_target_model_multiple_strings(self):
         block = blocks.PageChooserBlock(help_text="pick a page, any page", page_type=['tests.SimplePage', 'tests.EventPage'])
         empty_form_html = block.render_form(None, 'page')
-        self.assertIn('createPageChooser("page", ["tests.simplepage", "tests.eventpage"], null, false, null);', empty_form_html)
+        self.assertIn('createPageChooser("page", null, {"model_names": ["tests.simplepage", "tests.eventpage"], "can_choose_root": false, "user_perms": null});', empty_form_html)
 
     def test_form_render_with_target_model_multiple_literals(self):
         block = blocks.PageChooserBlock(help_text="pick a page, any page", page_type=[SimplePage, EventPage])
         empty_form_html = block.render_form(None, 'page')
-        self.assertIn('createPageChooser("page", ["tests.simplepage", "tests.eventpage"], null, false, null);', empty_form_html)
+        self.assertIn('createPageChooser("page", null, {"model_names": ["tests.simplepage", "tests.eventpage"], "can_choose_root": false, "user_perms": null});', empty_form_html)
 
     def test_form_render_with_can_choose_root(self):
         block = blocks.PageChooserBlock(help_text="pick a page, any page", can_choose_root=True)
         empty_form_html = block.render_form(None, 'page')
-        self.assertIn('createPageChooser("page", ["wagtailcore.page"], null, true, null);', empty_form_html)
+        self.assertIn('createPageChooser("page", null, {"model_names": ["wagtailcore.page"], "can_choose_root": true, "user_perms": null});', empty_form_html)
 
     def test_form_response(self):
         block = blocks.PageChooserBlock()
