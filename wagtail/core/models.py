@@ -150,7 +150,11 @@ def _copy(source, exclude_fields=None, update_attrs=None):
                 continue
             setattr(target, field, value)
 
-    child_object_map = source.copy_all_child_relations(target, exclude=exclude_fields)
+    if isinstance(source, ClusterableModel):
+        child_object_map = source.copy_all_child_relations(target, exclude=exclude_fields)
+    else:
+        child_object_map = {}
+
     return target, child_object_map
 
 
@@ -328,10 +332,6 @@ def pk(obj):
 
 
 class LocaleManager(models.Manager):
-    def get_queryset(self):
-        # Exclude any locales that have an invalid language code
-        return super().get_queryset().filter(language_code__in=get_content_languages().keys())
-
     def get_for_language(self, language_code):
         """
         Gets a Locale from a language code.
@@ -493,9 +493,14 @@ class TranslatableMixin(models.Model):
 
         Note that the copy is initially unsaved.
         """
-        translated = self.__class__.objects.get(id=self.id)
-        translated.id = None
+        translated, child_object_map = _copy(self)
         translated.locale = locale
+
+        # Update locale on any translatable child objects as well
+        # Note: If this is not a subclass of ClusterableModel, child_object_map will always be '{}'
+        for (child_relation, old_pk), child_object in child_object_map.items():
+            if isinstance(child_object, TranslatableMixin):
+                child_object.locale = locale
 
         return translated
 
@@ -2047,14 +2052,17 @@ class Page(AbstractPage, index.Indexed, ClusterableModel, metaclass=PageBase):
         exclude_fields = self.default_exclude_fields_in_copy + self.exclude_fields_in_copy + (exclude_fields or [])
         specific_self = self.specific
         if keep_live:
-            base_update_attrs = {}
+            base_update_attrs = {
+                'alias_of': None,
+            }
         else:
             base_update_attrs = {
                 'live': False,
                 'has_unpublished_changes': True,
                 'live_revision': None,
                 'first_published_at': None,
-                'last_published_at': None
+                'last_published_at': None,
+                'alias_of': None,
             }
 
         if user:
@@ -2668,8 +2676,32 @@ class Page(AbstractPage, index.Indexed, ClusterableModel, metaclass=PageBase):
         return self.get_siblings(inclusive).filter(path__lte=self.path).order_by('-path')
 
     def get_view_restrictions(self):
-        """Return a query set of all page view restrictions that apply to this page"""
-        return PageViewRestriction.objects.filter(page__in=self.get_ancestors(inclusive=True))
+        """
+        Return a query set of all page view restrictions that apply to this page.
+
+        This checks the current page and all ancestor pages for page view restrictions.
+
+        If any of those pages are aliases, it will resolve them to their source pages
+        before querying PageViewRestrictions so alias pages use the same view restrictions
+        as their source page and they cannot have their own.
+        """
+        page_ids_to_check = set()
+
+        def add_page_to_check_list(page):
+            # If the page is an alias, add the source page to the check list instead
+            if page.alias_of:
+                add_page_to_check_list(page.alias_of)
+            else:
+                page_ids_to_check.add(page.id)
+
+        # Check current page for view restrictions
+        add_page_to_check_list(self)
+
+        # Check each ancestor for view restrictions as well
+        for page in self.get_ancestors().only('alias_of'):
+            add_page_to_check_list(page)
+
+        return PageViewRestriction.objects.filter(page_id__in=page_ids_to_check)
 
     password_required_template = getattr(settings, 'PASSWORD_REQUIRED_TEMPLATE', 'wagtailcore/password_required.html')
 
